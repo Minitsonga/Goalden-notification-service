@@ -22,7 +22,7 @@ type ServiceTokenPayload = {
 
 export function serviceAuthMiddleware(req: Request, _res: Response, next: NextFunction): void {
   const authHeader = req.headers.authorization;
-  if (!authHeader || !authHeader.startsWith("Bearer ")) {
+  if (!authHeader?.startsWith("Bearer ")) {
     next(unauthorized("Service token required"));
     return;
   }

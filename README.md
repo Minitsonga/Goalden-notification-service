@@ -1,39 +1,25 @@
 # notification-service
 
-SMTP notification service for Goalden internal workflows.
+Service d’**emails transactionnels** (SMTP uniquement) pour les flux internes Goalden.
 
-## Features
+## Cadrage
 
-- Internal endpoints secured by service JWT (`scope=internal`)
-- Transactional email sending through SMTP
-- Selection email template endpoint
-- Notification delivery logs stored in Postgres (`goalden_notification`)
+Conforme au **PRD** (NFR-INT1) et au **guide Goalden** (§7.6) : envoi via **SMTP configurable**. En développement, un compte **Mailtrap** (sandbox gratuit) suffit : créer une inbox, récupérer `SMTP_USER` / `SMTP_PASS`.
 
-## Endpoints
+- Endpoints internes : `POST /internal/send-email`, `POST /internal/send-selection`.
+- Sécurité : **JWT service** sur `/internal/*`.
+- Logs : **MongoDB** (`goalden_notification`).
 
-- `GET /health`
-- `POST /internal/send-email`
-- `POST /internal/send-selection`
+## Variables
 
-## Environment
+Voir [`.env.example`](./.env.example).
 
-See `.env.example`.
-
-Required variables:
-
-- `SERVICE_JWT_SECRET`
-- `SMTP_HOST`
-- `SMTP_PORT`
-- `SMTP_USER`
-- `SMTP_PASS`
-- `SMTP_FROM`
-- `DATABASE_URL` (or `PG*`)
-
-## Local run
+## Scripts
 
 ```bash
 npm install
 npm run dev
+npm run build
+npm start
+npm test
 ```
-
-Default port: `3006`.

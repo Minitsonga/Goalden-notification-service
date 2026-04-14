@@ -1,85 +1,39 @@
-import { DataTypes, Model } from "sequelize";
-import { getSequelize } from "../config/database.js";
+import mongoose, { Schema } from "mongoose";
 
 export type NotificationKind = "TRANSACTIONAL" | "SELECTION";
 export type NotificationStatus = "SENT" | "FAILED";
 
-export class NotificationLog extends Model {
-  declare id: number;
-  declare kind: NotificationKind;
-  declare recipients: string[];
-  declare subject: string;
-  declare status: NotificationStatus;
-  declare provider: string;
-  declare sourceService: string;
-  declare messageId: string | null;
-  declare errorCode: string | null;
-  declare errorMessage: string | null;
-  declare payloadMeta: Record<string, unknown>;
-  declare createdAt: Date;
-  declare updatedAt: Date;
-}
-
-NotificationLog.init(
+const notificationLogSchema = new Schema(
   {
-    id: {
-      type: DataTypes.INTEGER,
-      primaryKey: true,
-      autoIncrement: true,
-    },
     kind: {
-      type: DataTypes.ENUM("TRANSACTIONAL", "SELECTION"),
-      allowNull: false,
+      type: String,
+      enum: ["TRANSACTIONAL", "SELECTION"],
+      required: true,
     },
-    recipients: {
-      type: DataTypes.ARRAY(DataTypes.STRING),
-      allowNull: false,
-    },
-    subject: {
-      type: DataTypes.STRING(200),
-      allowNull: false,
-    },
+    recipients: { type: [String], required: true },
+    subject: { type: String, required: true, maxlength: 200 },
     status: {
-      type: DataTypes.ENUM("SENT", "FAILED"),
-      allowNull: false,
+      type: String,
+      enum: ["SENT", "FAILED"],
+      required: true,
     },
     provider: {
-      type: DataTypes.STRING,
-      allowNull: false,
-      defaultValue: "smtp",
+      type: String,
+      enum: ["smtp"],
+      required: true,
     },
-    sourceService: {
-      type: DataTypes.STRING,
-      allowNull: false,
-      defaultValue: "unknown-service",
-    },
-    messageId: {
-      type: DataTypes.STRING,
-      allowNull: true,
-      defaultValue: null,
-    },
-    errorCode: {
-      type: DataTypes.STRING,
-      allowNull: true,
-      defaultValue: null,
-    },
-    errorMessage: {
-      type: DataTypes.TEXT,
-      allowNull: true,
-      defaultValue: null,
-    },
-    payloadMeta: {
-      type: DataTypes.JSONB,
-      allowNull: false,
-      defaultValue: {},
-    },
+    sourceService: { type: String, required: true, default: "unknown-service" },
+    messageId: { type: String, default: null },
+    errorCode: { type: String, default: null },
+    errorMessage: { type: String, default: null },
+    payloadMeta: { type: Schema.Types.Mixed, required: true, default: {} },
   },
-  {
-    sequelize: getSequelize(),
-    tableName: "notification_logs",
-    underscored: true,
-  }
+  { timestamps: true },
 );
 
-export default NotificationLog;
+notificationLogSchema.index({ createdAt: -1 });
+notificationLogSchema.index({ sourceService: 1, createdAt: -1 });
 
+export const NotificationLog =
+  mongoose.models.NotificationLog ??
+  mongoose.model("NotificationLog", notificationLogSchema);

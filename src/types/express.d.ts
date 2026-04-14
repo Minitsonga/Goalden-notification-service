@@ -1,13 +1,11 @@
-import "express";
+import "express-serve-static-core";
 
-declare global {
-  namespace Express {
-    interface Request {
-      service?: {
-        serviceId: string;
-        scope: string;
-      };
-    }
+declare module "express-serve-static-core" {
+  interface Request {
+    service?: {
+      serviceId: string;
+      scope: string;
+    };
   }
 }
 

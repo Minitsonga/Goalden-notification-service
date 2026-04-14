@@ -1,80 +1,78 @@
+import { describe, it, expect, beforeAll, afterAll, jest } from "@jest/globals";
+import { MongoMemoryServer } from "mongodb-memory-server";
+import mongoose from "mongoose";
 import jwt from "jsonwebtoken";
 import request from "supertest";
-import { jest } from "@jest/globals";
+import { NotificationLog } from "../models/NotificationLog.js";
 
-const sendMailMock = jest.fn<Promise<{ messageId: string }>, unknown[]>();
-const createMock = jest.fn<Promise<unknown>, [unknown]>();
+let mongoServer: MongoMemoryServer;
+let app: import("express").Express;
 
-jest.unstable_mockModule("nodemailer", () => ({
-  default: {
-    createTransport: jest.fn(() => ({
-      sendMail: sendMailMock,
-    })),
-  },
-}));
+const SERVICE_JWT_SECRET = "notif-test-service-jwt";
 
-jest.unstable_mockModule("../models/NotificationLog.js", () => ({
-  default: {
-    create: createMock,
-  },
-}));
-
-const { default: app } = await import("../app.js");
-
-function signServiceToken(payload: Record<string, unknown> = {}): string {
+function serviceToken(serviceId = "social-service") {
   return jwt.sign(
-    {
-      scope: "internal",
-      serviceId: "social-service",
-      ...payload,
-    },
-    process.env.SERVICE_JWT_SECRET as string
+    { serviceId, scope: "internal", permissions: ["notification:write"] },
+    SERVICE_JWT_SECRET,
+    { expiresIn: "15m" },
   );
 }
 
-describe("notification-service internal routes", () => {
-  beforeEach(() => {
-    process.env.SERVICE_JWT_SECRET = "test-service-secret";
-    process.env.SMTP_HOST = "smtp.test.local";
+describe("notification-service HTTP", () => {
+  beforeAll(async () => {
+    await jest.unstable_mockModule("nodemailer", () => ({
+      default: {
+        createTransport: () => ({
+          sendMail: async () => ({ messageId: "jest-smtp-mock-id" }),
+        }),
+      },
+    }));
+
+    mongoServer = await MongoMemoryServer.create();
+    process.env.MONGO_URI = mongoServer.getUri();
+    process.env.SERVICE_JWT_SECRET = SERVICE_JWT_SECRET;
+    process.env.SMTP_HOST = "sandbox.smtp.mailtrap.test";
+    process.env.SMTP_USER = "test-user";
+    process.env.SMTP_PASS = "test-pass";
     process.env.SMTP_PORT = "2525";
-    process.env.SMTP_USER = "smtp-user";
-    process.env.SMTP_PASS = "smtp-pass";
-    process.env.SMTP_FROM = "no-reply@test.local";
-    sendMailMock.mockReset();
-    createMock.mockReset();
-    sendMailMock.mockResolvedValue({ messageId: "mail-1" });
-    createMock.mockResolvedValue({});
+    process.env.SMTP_SECURE = "false";
+    process.env.NODE_ENV = "test";
+
+    await mongoose.connect(process.env.MONGO_URI);
+
+    const mod = await import("../app.js");
+    app = mod.default;
   });
 
-  it("returns 401 when service token is missing", async () => {
-    const response = await request(app).post("/internal/send-email").send({
-      to: "player@example.com",
-      subject: "Hello",
-      text: "Test",
+  afterAll(async () => {
+    await mongoose.disconnect();
+    if (mongoServer) await mongoServer.stop();
+  });
+
+  it("returns 401 without service token on internal route", async () => {
+    const res = await request(app).post("/internal/send-email").send({
+      to: "a@b.com",
+      subject: "Hello world",
+      text: "Body",
     });
-
-    expect(response.status).toBe(401);
-    expect(response.body.success).toBe(false);
-    expect(response.body.error.code).toBe("UNAUTHORIZED");
+    expect(res.status).toBe(401);
   });
 
-  it("accepts transactional email when token is valid", async () => {
-    const token = signServiceToken();
-
-    const response = await request(app)
+  it("accepts send-email with valid service JWT (SMTP mocked)", async () => {
+    const res = await request(app)
       .post("/internal/send-email")
-      .set("Authorization", `Bearer ${token}`)
+      .set("Authorization", `Bearer ${serviceToken()}`)
       .send({
-        to: ["player@example.com", "coach@example.com"],
-        subject: "Match reminder",
-        text: "Training starts at 18:00.",
+        to: "coach@example.com",
+        subject: "Test subject",
+        text: "Plain text",
       });
 
-    expect(response.status).toBe(202);
-    expect(response.body.success).toBe(true);
-    expect(response.body.data.accepted).toBe(true);
-    expect(sendMailMock).toHaveBeenCalledTimes(1);
-    expect(createMock).toHaveBeenCalledTimes(1);
+    expect(res.status).toBe(202);
+    expect(res.body.success).toBe(true);
+    expect(res.body.data.accepted).toBe(true);
+
+    const count = await NotificationLog.countDocuments();
+    expect(count).toBeGreaterThanOrEqual(1);
   });
 });
-

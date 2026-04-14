@@ -1,14 +1,12 @@
 import type { NextFunction, Request, Response } from "express";
-import type { ValidationError } from "joi";
+import Joi from "joi";
 
-type NormalisedError = {
+function normaliseError(err: unknown): {
   statusCode: number;
   code: string;
   message: string;
-  details?: unknown;
-};
-
-function normaliseError(err: unknown): NormalisedError {
+  details?: string[];
+} {
   if (!err) {
     return {
       statusCode: 500,
@@ -16,41 +14,33 @@ function normaliseError(err: unknown): NormalisedError {
       message: "An unknown error occurred",
     };
   }
-
-  const maybeJoi = err as Partial<ValidationError> & { isJoi?: boolean };
-  if (maybeJoi.isJoi) {
+  if (Joi.isError(err)) {
+    const maybeJoi = err;
+    const details = maybeJoi.details?.map((d) => d.message);
     return {
       statusCode: 400,
       code: "VALIDATION_ERROR",
       message: "Invalid request data",
-      details: maybeJoi.details?.map((detail) => detail.message) ?? undefined,
+      ...(details && details.length > 0 ? { details } : {}),
     };
   }
-
   const anyErr = err as {
     statusCode?: number;
     status?: number;
     code?: string;
     message?: string;
-    details?: unknown;
+    details?: string[];
   };
-
   return {
-    statusCode: anyErr.statusCode || anyErr.status || 500,
-    code: anyErr.code || "INTERNAL_ERROR",
-    message: anyErr.message || "Internal error",
-    details: anyErr.details,
+    statusCode: anyErr.statusCode ?? anyErr.status ?? 500,
+    code: anyErr.code ?? "INTERNAL_ERROR",
+    message: anyErr.message ?? "Internal error",
+    ...(anyErr.details && anyErr.details.length > 0 ? { details: anyErr.details } : {}),
   };
 }
 
-export function errorHandler(
-  err: unknown,
-  req: Request,
-  res: Response,
-  _next: NextFunction
-): void {
+export function errorHandler(err: unknown, req: Request, res: Response, _next: NextFunction): void {
   const normalised = normaliseError(err);
-
   if (normalised.statusCode >= 500) {
     // eslint-disable-next-line no-console
     console.error("[notification-service] Unexpected error", {
@@ -59,7 +49,6 @@ export function errorHandler(
       path: req.path,
     });
   }
-
   res.status(normalised.statusCode).json({
     success: false,
     error: {

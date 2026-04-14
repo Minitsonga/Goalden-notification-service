@@ -1,23 +1,6 @@
 import Joi from "joi";
 
-export type SendEmailPayload = {
-  to: string | string[];
-  subject: string;
-  text?: string;
-  html?: string;
-  meta?: Record<string, unknown>;
-};
-
-export type SendSelectionPayload = {
-  to: string | string[];
-  teamName: string;
-  eventName: string;
-  eventDate: string;
-  selectionSummary?: string;
-  meta?: Record<string, unknown>;
-};
-
-export const sendEmailSchema = Joi.object<SendEmailPayload>({
+export const sendEmailSchema = Joi.object({
   to: Joi.alternatives()
     .try(Joi.string().email(), Joi.array().items(Joi.string().email()).min(1))
     .required(),
@@ -34,7 +17,7 @@ export const sendEmailSchema = Joi.object<SendEmailPayload>({
   return value;
 });
 
-export const sendSelectionSchema = Joi.object<SendSelectionPayload>({
+export const sendSelectionSchema = Joi.object({
   to: Joi.alternatives()
     .try(Joi.string().email(), Joi.array().items(Joi.string().email()).min(1))
     .required(),
@@ -55,4 +38,3 @@ export function validateBody<T>(schema: Joi.ObjectSchema<T>, payload: unknown): 
   }
   return value as T;
 }
-

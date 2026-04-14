@@ -4,7 +4,7 @@ import { connectDatabase } from "./config/database.js";
 
 dotenv.config();
 
-const port = process.env.PORT || 3006;
+const port = parseInt(process.env.PORT ?? "3006", 10);
 
 async function start(): Promise<void> {
   try {
@@ -25,4 +25,3 @@ async function start(): Promise<void> {
 void start();
 
 export default app;
-

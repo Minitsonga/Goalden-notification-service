@@ -1,12 +1,13 @@
 import nodemailer from "nodemailer";
-import NotificationLog from "../models/NotificationLog.js";
-import type { SendEmailPayload, SendSelectionPayload } from "../validators/notification.validators.js";
+import type { Model } from "mongoose";
+import { NotificationLog } from "../models/NotificationLog.js";
+import type { NotificationKind } from "../models/NotificationLog.js";
 
 function asArray(recipients: string | string[]): string[] {
   return Array.isArray(recipients) ? recipients : [recipients];
 }
 
-function parseBoolean(value: unknown, fallback: boolean): boolean {
+function parseBoolean(value: string | undefined, fallback: boolean): boolean {
   if (value === undefined) {
     return fallback;
   }
@@ -20,13 +21,12 @@ function parseBoolean(value: unknown, fallback: boolean): boolean {
   return fallback;
 }
 
-function createTransporter() {
+function createSmtpTransporter() {
   const host = process.env.SMTP_HOST;
   const port = Number(process.env.SMTP_PORT || 587);
   const user = process.env.SMTP_USER;
   const pass = process.env.SMTP_PASS;
   const secure = parseBoolean(process.env.SMTP_SECURE, port === 465);
-
   if (!host || !user || !pass) {
     const error = new Error("SMTP configuration is incomplete") as Error & {
       statusCode: number;
@@ -36,40 +36,73 @@ function createTransporter() {
     error.code = "SERVICE_UNAVAILABLE";
     throw error;
   }
-
   return nodemailer.createTransport({
     host,
     port,
     secure,
-    auth: {
-      user,
-      pass,
-    },
+    auth: { user, pass },
   });
 }
 
-function buildSelectionHtml(payload: SendSelectionPayload): string {
+function buildSelectionHtml(payload: {
+  teamName: string;
+  eventName: string;
+  eventDate: string;
+  selectionSummary?: string;
+}): string {
   const summary = payload.selectionSummary
-    ? `<p><strong>Summary:</strong> ${payload.selectionSummary}</p>`
+    ? `<p><strong>Résumé :</strong> ${payload.selectionSummary}</p>`
     : "";
-
   return `
-    <h2>Official selection published</h2>
-    <p><strong>Team:</strong> ${payload.teamName}</p>
-    <p><strong>Event:</strong> ${payload.eventName}</p>
-    <p><strong>Date:</strong> ${payload.eventDate}</p>
+    <h2>Sélection officielle publiée</h2>
+    <p><strong>Équipe :</strong> ${payload.teamName}</p>
+    <p><strong>Événement :</strong> ${payload.eventName}</p>
+    <p><strong>Date :</strong> ${payload.eventDate}</p>
     ${summary}
   `;
 }
 
+async function persistLog(input: {
+  kind: NotificationKind;
+  recipients: string[];
+  subject: string;
+  status: "SENT" | "FAILED";
+  provider: "smtp";
+  sourceService: string;
+  messageId: string | null;
+  errorCode: string | null;
+  errorMessage: string | null;
+  payloadMeta: Record<string, unknown>;
+}): Promise<void> {
+  const Log = NotificationLog as Model<Record<string, unknown>>;
+  await Log.create({
+    kind: input.kind,
+    recipients: input.recipients,
+    subject: input.subject,
+    status: input.status,
+    provider: input.provider,
+    sourceService: input.sourceService,
+    messageId: input.messageId,
+    errorCode: input.errorCode,
+    errorMessage: input.errorMessage,
+    payloadMeta: input.payloadMeta,
+  });
+}
+
 export async function sendTransactionalEmail(
-  payload: SendEmailPayload,
-  sourceService: string
-): Promise<{ sent: true; messageId: string | null }> {
-  const transporter = createTransporter();
+  payload: {
+    to: string | string[];
+    subject: string;
+    text?: string;
+    html?: string;
+    meta?: Record<string, unknown>;
+  },
+  sourceService: string,
+  kind: NotificationKind = "TRANSACTIONAL",
+): Promise<{ sent: boolean; messageId: string | null }> {
   const to = asArray(payload.to);
   const from = process.env.SMTP_FROM || "no-reply@goalden.local";
-
+  const transporter = createSmtpTransporter();
   try {
     const result = await transporter.sendMail({
       from,
@@ -78,34 +111,33 @@ export async function sendTransactionalEmail(
       text: payload.text,
       html: payload.html,
     });
-
-    await NotificationLog.create({
-      kind: "TRANSACTIONAL",
+    await persistLog({
+      kind,
       recipients: to,
       subject: payload.subject,
       status: "SENT",
+      provider: "smtp",
       sourceService,
       messageId: result.messageId ?? null,
-      payloadMeta: payload.meta || {},
+      errorCode: null,
+      errorMessage: null,
+      payloadMeta: payload.meta ?? {},
     });
-
-    return {
-      sent: true,
-      messageId: result.messageId ?? null,
-    };
+    return { sent: true, messageId: result.messageId ?? null };
   } catch (error: unknown) {
     const anyErr = error as { code?: string; message?: string };
-    await NotificationLog.create({
-      kind: "TRANSACTIONAL",
+    await persistLog({
+      kind,
       recipients: to,
       subject: payload.subject,
       status: "FAILED",
+      provider: "smtp",
       sourceService,
-      errorCode: anyErr.code || null,
-      errorMessage: anyErr.message || "SMTP delivery failure",
-      payloadMeta: payload.meta || {},
+      messageId: null,
+      errorCode: anyErr.code ?? null,
+      errorMessage: anyErr.message ?? "SMTP delivery failure",
+      payloadMeta: payload.meta ?? {},
     });
-
     const wrappedError = new Error("Email delivery failed") as Error & {
       statusCode: number;
       code: string;
@@ -117,16 +149,22 @@ export async function sendTransactionalEmail(
 }
 
 export async function sendSelectionNotification(
-  payload: SendSelectionPayload,
-  sourceService: string
-): Promise<{ sent: true; messageId: string | null }> {
-  const subject = `[Selection] ${payload.teamName} - ${payload.eventName}`;
-
+  payload: {
+    to: string | string[];
+    teamName: string;
+    eventName: string;
+    eventDate: string;
+    selectionSummary?: string;
+    meta?: Record<string, unknown>;
+  },
+  sourceService: string,
+): Promise<{ sent: boolean; messageId: string | null }> {
+  const subject = `[Sélection] ${payload.teamName} - ${payload.eventName}`;
   return sendTransactionalEmail(
     {
       to: payload.to,
       subject,
-      text: `Official selection for ${payload.teamName} (${payload.eventName}) on ${payload.eventDate}.`,
+      text: `Sélection officielle pour ${payload.teamName} (${payload.eventName}) le ${payload.eventDate}.`,
       html: buildSelectionHtml(payload),
       meta: {
         ...payload.meta,
@@ -135,7 +173,7 @@ export async function sendSelectionNotification(
         eventDate: payload.eventDate,
       },
     },
-    sourceService
+    sourceService,
+    "SELECTION",
   );
 }
-
