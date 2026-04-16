@@ -28,6 +28,11 @@ function createSmtpTransporter() {
   const pass = process.env.SMTP_PASS;
   const secure = parseBoolean(process.env.SMTP_SECURE, port === 465);
   if (!host || !user || !pass) {
+    // En dev/test, on autorise un transport "stub" pour valider le flux end-to-end
+    // sans dépendre d'un vrai provider SMTP.
+    if ((process.env.NODE_ENV ?? "development") !== "production") {
+      return nodemailer.createTransport({ jsonTransport: true });
+    }
     const error = new Error("SMTP configuration is incomplete") as Error & {
       statusCode: number;
       code: string;
