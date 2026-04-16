@@ -1,10 +1,10 @@
 import mongoose from "mongoose";
 
-const DEFAULT_URI =
-  "mongodb://127.0.0.1:27017/goalden_notification";
-
 export async function connectDatabase(): Promise<void> {
-  const uri = process.env.MONGO_URI?.trim() || DEFAULT_URI;
+  const uri = process.env.MONGO_URI?.trim();
+  if (!uri) {
+    throw new Error("MONGO_URI is required");
+  }
   mongoose.set("strictQuery", true);
   await mongoose.connect(uri);
 }
