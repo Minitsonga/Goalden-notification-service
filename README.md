@@ -1,25 +1,44 @@
-# notification-service
+# Notification Service
 
-Service d’**emails transactionnels** (SMTP uniquement) pour les flux internes Goalden.
+Service d'emails transactionnels de Goalden (SMTP), expose uniquement des routes internes securisees.
 
-## Cadrage
+## Ce que le service fait
 
-Conforme au **PRD** (NFR-INT1) et au **guide Goalden** (§7.6) : envoi via **SMTP configurable**. En développement, un compte **Mailtrap** (sandbox gratuit) suffit : créer une inbox, récupérer `SMTP_USER` / `SMTP_PASS`.
+- Envoie des emails transactionnels generiques.
+- Envoie des notifications de publication de selection.
+- Journalise les envois en base MongoDB (`goalden_notification`).
+- Protege toutes les routes internes via JWT de service.
 
-- Endpoints internes : `POST /internal/send-email`, `POST /internal/send-selection`.
-- Sécurité : **JWT service** sur `/internal/*`.
-- Logs : **MongoDB** (`goalden_notification`).
+## Endpoints principaux
 
-## Variables
+- `POST /internal/send-email` : envoi d'email standard.
+- `POST /internal/send-selection` : envoi lie aux selections d'equipe.
+- `GET /health` : etat du service.
 
-Voir [`.env.example`](./.env.example).
+## Interactions avec les autres services
 
-## Scripts
+### Sortantes (notification-service -> autres)
+
+- Aucune dependance inter-service sortante (SMTP + DB uniquement).
+
+### Entrantes (autres -> notification-service)
+
+- `gateway` appelle `POST /internal/send-email` (mutation GraphQL `sendDemoEmail`).
+- `social-service` appelle `POST /internal/send-selection` en best-effort apres publication d'une selection.
+
+## Stack technique
+
+- Node.js + TypeScript (Express).
+- MongoDB (Mongoose) pour les logs.
+- SMTP configurable (`SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASS`).
+- JWT service (`SERVICE_JWT_SECRET`) pour l'auth inter-services.
+
+## Demarrage local
 
 ```bash
 npm install
+cp .env.example .env
 npm run dev
-npm run build
-npm start
-npm test
 ```
+
+Variables: voir `.env.example`.
