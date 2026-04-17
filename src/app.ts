@@ -6,10 +6,27 @@ import serviceAuthMiddleware from "./middleware/serviceAuth.middleware.js";
 import errorHandler from "./middleware/error.middleware.js";
 
 const app = express();
+const ACTION_METHODS = new Set(["POST", "PUT", "PATCH", "DELETE"]);
 
 app.use(cors());
 app.use(express.json());
 app.use(morgan("dev"));
+app.use((req, res, next) => {
+  if (!ACTION_METHODS.has(req.method) || req.path === "/health") {
+    return next();
+  }
+
+  const startedAt = Date.now();
+  res.on("finish", () => {
+    const durationMs = Date.now() - startedAt;
+    // eslint-disable-next-line no-console
+    console.log(
+      `[notification-service] action=${req.method} ${req.originalUrl} status=${res.statusCode} durationMs=${durationMs}`,
+    );
+  });
+
+  return next();
+});
 
 app.get("/health", (_req, res) => {
   res.json({ success: true, data: { service: "notification-service", status: "ok" } });

@@ -107,8 +107,16 @@ export async function sendTransactionalEmail(
 ): Promise<{ sent: boolean; messageId: string | null }> {
   const to = asArray(payload.to);
   const from = process.env.SMTP_FROM || "no-reply@goalden.local";
+  // eslint-disable-next-line no-console
+  console.log(
+    `[notification-service] email_prepare kind=${kind} source=${sourceService} recipients=${to.length} subject="${payload.subject}"`,
+  );
   const transporter = createSmtpTransporter();
   try {
+    // eslint-disable-next-line no-console
+    console.log(
+      `[notification-service] email_send_start kind=${kind} source=${sourceService} recipients=${to.join(",")}`,
+    );
     const result = await transporter.sendMail({
       from,
       to,
@@ -116,6 +124,10 @@ export async function sendTransactionalEmail(
       text: payload.text,
       html: payload.html,
     });
+    // eslint-disable-next-line no-console
+    console.log(
+      `[notification-service] email_send_success kind=${kind} source=${sourceService} messageId=${result.messageId ?? "n/a"}`,
+    );
     await persistLog({
       kind,
       recipients: to,
@@ -131,6 +143,10 @@ export async function sendTransactionalEmail(
     return { sent: true, messageId: result.messageId ?? null };
   } catch (error: unknown) {
     const anyErr = error as { code?: string; message?: string };
+    // eslint-disable-next-line no-console
+    console.error(
+      `[notification-service] email_send_failure kind=${kind} source=${sourceService} code=${anyErr.code ?? "UNKNOWN"} message="${anyErr.message ?? "SMTP delivery failure"}"`,
+    );
     await persistLog({
       kind,
       recipients: to,
